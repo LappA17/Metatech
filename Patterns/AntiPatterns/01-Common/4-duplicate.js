@@ -1,0 +1,66 @@
+'use strict';
+
+const { promises, watch } = require('node:fs');
+const { readFile, readdir } = promises;
+const fs = { watch, readFile, readdir };
+
+// Antipattern: Duplicated code
+{
+  const cache = new Map();
+
+  const watchFolder = (path) => {
+    fs.watch(path, async (event, file) => {
+      // try внутри watchFolder такой же как try в cacheFolder
+      try {
+        const data = await fs.readFile(file, 'utf8');
+        cache.set(file, data);
+      } catch (err) {
+        cache.delete(file);
+      }
+    });
+  };
+
+  const cacheFolder = async (path) => {
+    watchFolder(path);
+    const files = await fs.readdir(path);
+    for (const file of files) {
+      try {
+        const data = fs.readFile(file, 'utf8');
+        cache.set(file, data);
+      } catch (err) {
+        cache.delete(file);
+      }
+    }
+  };
+
+  cacheFolder('./');
+}
+
+// Refactored
+{
+  const cache = new Map();
+
+  // выносим этот try в функцию
+  const cacheFile = async (file) => {
+    try {
+      const data = await fs.readFile(file, 'utf8');
+      cache.set(file, data);
+    } catch (err) {
+      cache.delete(file);
+    }
+  };
+
+  const watchFolder = (path) => {
+    fs.watch(path, (event, file) => {
+      cacheFile(file);
+    });
+  };
+
+  const cacheFolder = async (path) => {
+    watchFolder(path);
+    const files = await fs.readdir(path);
+    for (const file of files) cacheFile(file);
+  };
+
+  cacheFolder('./');
+}

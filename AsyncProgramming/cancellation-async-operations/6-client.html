@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <div id="message"></div>
+    <script>
+      // Наш Cancelable написан таким же способом что и в 3 примере, но у функции executor появляется еще один аргумент (callback) => { onCancel = callback; }); и этот аргумент получает от пользователя еще один Коллбек и нужно будет вызывать этот коллбек после отмены промиса
+      class Cancelable extends Promise {
+        constructor(executor) {
+          // вызов executor случаетя (resolve, reject) и его вызывает у нас Промис на микротаске, по-этому это случится отложенным способом
+          // и там ухе пользователь должен подсунуть собственный резолв и реджект или onError если он хочет, если онЕррора не будет то там будет null
+          super((resolve, reject) => {
+            let onCancel = null;
+            const wrapCancel = (callback) => (val) => {
+              //console.log(val); сюда в val будет приходить то с чем мы вызываем callback, если на место callback подставится resolve('first'), resolve('second'), reject('third')
+              // то-есть то что из предыдущих примером, и если resolve и reject попадают на место callback, то 'first', 'second', 'third' и так далее, те всё что мы передаем
+              // в аргументы этой коллбек функции будет подставляться на место val !!
+              if (this.canceled) {
+                if (onCancel) {
+                  // мы вызыаем onCancel и сразу обнуляем потому что кто-то может его вызывать несколько раз
+                  // так же мы сохраняем ссылку на ту функцмю которая умеет отменять, и в случае если случается resolve или reject то мы сначала перед ним вызовив onCancel()
+                  onCancel();
+                  onCancel = null;
+                }
+                return;
+              }
+              // если операция не была отменена, то мы нормально вызываем callback
+              // этот коллбек берется из первого вызова, у нас здесь дважды вложенная лямбда = (callback) => (val), в первом вызове коллбек, а во втором val
+              // как это работает? В первом вызове wrapCancel к нам приходит resolve, то-есть на место callback подставляется resolve, возвращается функция, которая принимает val и этот val уже может быть отменён
+              // во-второй раз уже оборачиваем reject и на место callback подставится reject. Таким образом мы оборачиваем и делаем отменяемими и резолв и реджект
+              callback(val);
+            };
+            // а последняя функция берёт этот callback который нам передает пользователь этого Cancelable Промиса и присваеваем его в локальную переменную onCancel
+            // мы специально поместили в лямбду => {} что бы у нас из этоу функции ничего не возвращалось, потому что из неё вернётся тоже самое что мы присвоили
+            executor(wrapCancel(resolve), wrapCancel(reject), (callback) => {
+              onCancel = callback;
+            });
+          });
+          // флаг у нас хранится в объекте унаследованного от Промиса
+          this.canceled = false;
+        }
+
+        cancel() {
+          this.canceled = true;
+        }
+      }
+
+      // Usage
+
+      const message = document.getElementById('message');
+
+      // мы переписали fetch на XMLHttpRequest потому что обычный fetch не умеет отменяться, а наш умеет и более того возвращает new Cancelable Промис
+      // и теперь у него появилась функция onCancel и мы благодаря ей можем передавать функцию которая отменит работу нашей этой асинхронной абстракции(запроса на серверную часть)
+      // в нашем примере это xhr.abort() который в лямбду onCancel
+      // так как у нашего XMLHttpRequest есть куча методов(в том числе и abort) и когда кто-то снаруже захочет отменить нашу асинхронную операцию, то при помощи onCancel мы говорим что бы вызвали нам лямбду с xhr.abort()
+      const fetch = (url) =>
+        new Cancelable((resolve, reject, onCancel) => {
+          const xhr = new XMLHttpRequest();
+          xhr.onreadystatechange = () => {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+              if (xhr.status === 200) resolve(xhr.responseText);
+              else reject(`Status Code: ${xhr.status}`);
+            }
+          };
+          xhr.open('GET', url, true);
+          xhr.send();
+          onCancel(() => {
+            xhr.abort();
+          });
+        });
+
+      // Usage
+
+      const req = fetch('/person');
+
+      // мы подписываем на наш req с помощью then
+
+      req.then(
+        (body) => (message.innerHTML = body),
+        (err) => (message.innerHTML = err)
+      );
+
+      req.cancel();
+      console.dir({ req });
+    </script>
+  </body>
+</html>

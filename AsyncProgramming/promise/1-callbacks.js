@@ -1,0 +1,15 @@
+'use strict';
+
+const fs = require('node:fs');
+
+fs.readFile('file1.txt', 'utf8', (err, data) => {
+	console.log(err || data.toString());
+	fs.readFile('file2.txt', 'utf8', (err, data) => {
+		console.log(err || data.toString());
+		fs.readFile('file3.txt', 'utf8', (err, data) => {
+			console.log(err || data.toString());
+		});
+	});
+});
+
+// Мы изначально пришли к Промисам, потому что хотели освободится от таких конструкций, от таких вложенностей
